@@ -1,0 +1,16 @@
+[package]
+name = "sstv-encoder-lib"
+version = "0.1.0"
+authors = ["BenderBlog Rodriguez <superbart_chen@qq.com>"]
+readme = "README.MD"
+repository = "https://github.com/BenderBlog/rust-sstv/"
+description = "Library to convert images into audio using the SSTV algorithms"
+keywords = ["sstv", "encoder"]
+categories = ["encoding", "multimedia"]
+edition = "2024"
+license = "0BSD"
+
+[dependencies]
+image = { version = "0.25", optional = true }
+wav_io = "0.1.15"
+thiserror = "2"

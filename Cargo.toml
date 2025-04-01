@@ -1,9 +1,10 @@
 [workspace]
 members = [
+    "sstv-decoder-lib",
     "sstv-encoder-lib",
-    #"sstv-decoder-lib", 
     #"cli"
 ]
+resolver = "3"
 
 [profile.release]
 panic = "abort"

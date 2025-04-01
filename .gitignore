@@ -1,6 +1,4 @@
 /target
-/sstv-decoder-lib
 /cli
 *.wav
-.gitignore.bak
 .DS_Store

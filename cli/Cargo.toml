@@ -1,0 +1,9 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.15.3"
+wav_io = "0.1.15"
+sstv-decoder-lib = { path = "../sstv-decoder-lib", version = "^0.1.0" }

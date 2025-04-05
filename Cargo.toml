@@ -1,8 +1,8 @@
 [workspace]
-members = [
+members = [ 
+    "cli",
     "sstv-decoder-lib",
     "sstv-encoder-lib",
-    #"cli"
 ]
 resolver = "3"
 

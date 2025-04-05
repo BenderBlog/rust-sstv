@@ -1,18 +1,3 @@
-pub mod decoder;
-mod hilbert;
-mod parse_vis_header;
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod mode;
+pub mod sstv_decoder;
+mod sstv_image;

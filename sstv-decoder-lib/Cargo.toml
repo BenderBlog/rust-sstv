@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2"
-spectrum-analyzer = "1.6.0"
+rustfft = "6.3.0"
+num-complex = "0.4.6"
+biquad = "0.5.0"
+image = "0.25.6"

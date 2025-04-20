@@ -6,7 +6,8 @@ fn main() {
     //let path = args.get(1).expect("file path not provided");
 
     // Open the media source.
-    let src = std::fs::File::open("/home/superbart/下载/20250405_154539.wav").expect("failed to open media");
+    let src = std::fs::File::open("/home/superbart/下载/20250405_154539.wav")
+        .expect("failed to open media");
 
     // read from file
     let (head, samples) = wav_io::read_from_file(src).unwrap();
@@ -17,12 +18,11 @@ fn main() {
     // show samples
     println!("samples.len={}", samples.len());
 
-
     let mut sstv_decoder: SSTVDecoder = SSTVDecoder::new(head.sample_rate as f32);
 
     let mut cache: Vec<f32> = vec![];
     for (i, v) in samples.iter().enumerate() {
-        if i % 1000 == 0 && i != 0 {
+        if i % 1024 == 0 && i != 0 {
             sstv_decoder.decode(&cache);
             cache.clear();
         }
@@ -49,6 +49,7 @@ fn main() {
     let mut sstv_decoder: SSTVDecoder = SSTVDecoder::new(default_config.sample_rate().0 as f32);
     let stream = device
         .build_input_stream(
+            &config.config(),
             &config.config(),
             move |data: & [f32], _| {
                 println!("{:?}\n",&data);

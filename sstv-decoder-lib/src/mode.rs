@@ -23,10 +23,10 @@ pub enum Mode {
     //  Pd290,
 }
 
-pub enum Sync {
-    Sync,
-    Unsync,
-}
+//pub enum Sync {
+//    Sync,
+//    Unsync,
+//}
 
 // enum ColorMode {
 //     RGB,

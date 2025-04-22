@@ -22,7 +22,7 @@ fn main() {
 
     let mut cache: Vec<f32> = vec![];
     for (i, v) in samples.iter().enumerate() {
-        if i % 1024 == 0 && i != 0 {
+        if i % ((head.sample_rate / 10) as usize) == 0 && i != 0 {
             sstv_decoder.decode(&cache);
             cache.clear();
         }

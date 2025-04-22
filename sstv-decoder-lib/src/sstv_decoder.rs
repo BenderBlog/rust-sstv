@@ -1,14 +1,17 @@
 // Copyright 2025 BenderBlog Rodriguez and Contributors.
 // SPDX-License-Identifier: 0BSD
 
-use std::{collections::VecDeque, vec};
+use std::{
+    collections::VecDeque,
+    f32::consts::PI,
+    fs::File,
+    io::{BufWriter, Write},
+    vec,
+};
 
-use biquad::*;
 use image::{Rgb, RgbImage};
 
-use crate::{
-    bandpass_filter::bandpass_filter, mode::Mode, sliding_hilbert::instantaneous_frequency,
-};
+use crate::{bandpass_filter::bandpass_filter, hilbert::hilbert_transform, mode::Mode};
 
 fn get_sample_length_in_ms(sample_rate: f32) -> f32 {
     sample_rate / 1000.0
@@ -29,10 +32,15 @@ pub struct SSTVDecoder {
     /// Optional video stuff.
     picture: Vec<Vec<[u8; 3]>>,
     counter: usize,
+    /// Debug file to store sample data
+    writer: BufWriter<File>,
+    /// Previous phase.
+    prev: f32,
 }
 
 impl SSTVDecoder {
     pub fn new(sample_rate: f32) -> Self {
+        let file = std::fs::File::create("inst_freq_sliding_hilbert.csv").unwrap();
         SSTVDecoder {
             mode: Mode::None,
             sample_rate: sample_rate,
@@ -41,6 +49,8 @@ impl SSTVDecoder {
             vis_sample_num: (300.0 * get_sample_length_in_ms(sample_rate)) as usize,
             picture: vec![vec![]],
             counter: 0,
+            writer: std::io::BufWriter::new(file),
+            prev: 0.0,
         }
     }
 
@@ -52,19 +62,48 @@ impl SSTVDecoder {
         self.vis_sample_num = (300.0 * get_sample_length_in_ms(sample_rate)) as usize;
         self.picture = vec![vec![]];
         self.counter = 0;
+        self.prev = 0.0;
     }
 
     /// Decoder
-    fn decoder(&self, samples: &[f32]) -> Vec<f32> {
+    fn decoder(&mut self, samples: &[f32]) -> Vec<f32> {
         let samples = bandpass_filter(samples, self.sample_rate);
-        let to_return = instantaneous_frequency(&samples, self.sample_rate);
+        let z = hilbert_transform(&samples);
+        let mut phase: Vec<f32> = z.iter().map(|c| c.arg()).collect();
+        for i in 0..phase.len() {
+            let mut dp = phase[i] - self.prev;
+            while dp > PI {
+                dp -= 2.0 * PI;
+            }
+            while dp < -PI {
+                dp += 2.0 * PI;
+            }
+            phase[i] = self.prev + dp;
+            self.prev = phase[i];
+        }
+        let to_return = phase
+            .windows(2)
+            .map(|w| {
+                let to_return = (self.sample_rate * (w[1] - w[0]) / (2.0 * PI)).abs();
+                if to_return > 3000.0 {
+                    3000.0
+                } else if to_return < 1000.0 {
+                    1000.0
+                } else {
+                    to_return
+                }
+            })
+            .collect();
         // let f = std::fs::File::create_new("inst_freq_hilbert.csv");
         // let mut w = std::io::BufWriter::new(f);
+        for &f in &to_return {
+            writeln!(self.writer, "{:.2}", f).unwrap();
+        }
         to_return
     }
 
     /// Check the header
-    fn get_header(&self, frequency_data: &[f32]) -> bool {
+    fn get_header(&mut self, frequency_data: &[f32]) -> bool {
         let leader_duration_sample = (300.0 * get_sample_length_in_ms(self.sample_rate)) as usize;
         let break_duration_sample = (10.0 * get_sample_length_in_ms(self.sample_rate)) as usize;
 
@@ -73,24 +112,17 @@ impl SSTVDecoder {
             return false;
         }
 
-        let first_leader_tone = self
-            .decoder(&frequency_data[0..leader_duration_sample])
+        let first_leader_tone = &frequency_data[0..leader_duration_sample]
             .iter()
             .sum::<f32>()
             / leader_duration_sample as f32;
-        let break_tone_freq = self
-            .decoder(
-                &frequency_data
-                    [leader_duration_sample..leader_duration_sample + break_duration_sample],
-            )
+        let break_tone_freq = &frequency_data
+            [leader_duration_sample..leader_duration_sample + break_duration_sample]
             .iter()
             .sum::<f32>()
             / break_duration_sample as f32;
-        let second_leader_tone = self
-            .decoder(
-                &frequency_data[leader_duration_sample + break_duration_sample
-                    ..2 * leader_duration_sample + break_duration_sample],
-            )
+        let second_leader_tone = &frequency_data[leader_duration_sample + break_duration_sample
+            ..2 * leader_duration_sample + break_duration_sample]
             .iter()
             .sum::<f32>()
             / leader_duration_sample as f32;
@@ -106,7 +138,7 @@ impl SSTVDecoder {
     }
 
     /// Check the vis
-    fn decode_vis(&self, frequency_data: &[f32]) -> Mode {
+    fn decode_vis(&mut self, frequency_data: &[f32]) -> Mode {
         if frequency_data.len() != self.vis_sample_num {
             eprintln!("Error: PCM data length is not equal to a VIS signal's length.");
             return Mode::None;
@@ -120,8 +152,7 @@ impl SSTVDecoder {
         let mut true_count: u8 = 0;
 
         for bit_index in 1..8 {
-            let section = if (self
-                .decoder(&frequency_data[bit_index * bit_size..(bit_index + 1) * bit_size])
+            let section = if (&frequency_data[bit_index * bit_size..(bit_index + 1) * bit_size]
                 .iter()
                 .sum::<f32>()
                 / bit_size as f32
@@ -136,7 +167,7 @@ impl SSTVDecoder {
                 "{} bit is {} from {}.",
                 bit_index,
                 section,
-                self.decoder(&frequency_data[bit_index * bit_size..(bit_index + 1) * bit_size])
+                (&frequency_data[bit_index * bit_size..(bit_index + 1) * bit_size])
                     .iter()
                     .sum::<f32>()
                     / bit_size as f32
@@ -148,8 +179,7 @@ impl SSTVDecoder {
 
             vis_code += if section { 1 } else { 0 } << (bit_index - 1);
         }
-        let parity = (self
-            .decoder(&frequency_data[9 * bit_size..10 * bit_size])
+        let parity = ((&frequency_data[9 * bit_size..10 * bit_size])
             .iter()
             .sum::<f32>()
             / bit_size as f32
@@ -192,13 +222,12 @@ impl SSTVDecoder {
     }
 
     /// Get line info
-    fn decode_line_info(&self, frequency_data: &[f32], pixels: usize) -> Vec<u8> {
+    fn decode_line_info(&mut self, frequency_data: &[f32], pixels: usize) -> Vec<u8> {
         let mut decoded_pixel = vec![0; pixels];
-        let freq = self.decoder(&frequency_data);
+        let freq = &frequency_data;
         let freq_per_pixel = freq.len() / pixels;
         for i in 0..pixels - 1 {
-            let freq = self
-                .decoder(&frequency_data[i * freq_per_pixel..(i + 1) * freq_per_pixel])
+            let freq = freq[i * freq_per_pixel..(i + 1) * freq_per_pixel]
                 .iter()
                 .sum::<f32>()
                 / freq_per_pixel as f32;
@@ -208,28 +237,15 @@ impl SSTVDecoder {
     }
 
     /// Decode the stream of data, by adding 1ms data.
-    pub fn decode(&mut self, pcm_data_in_1_ms: &[f32]) {
-        if pcm_data_in_1_ms.len() == 0 {
+    pub fn decode(&mut self, pcm_data: &[f32]) {
+        if pcm_data.len() == 0 {
             eprintln!("PCM data is empty!");
             return;
         }
 
-        let fl = 1.khz();
-        let fh = 3.khz();
-        let fs = self.sample_rate.hz();
-
-        let coeffs_lp = Coefficients::<f32>::from_params(Type::LowPass, fs, fh, 1.).unwrap();
-        let coeffs_hp = Coefficients::<f32>::from_params(Type::HighPass, fs, fl, 1.).unwrap();
-
-        let mut biquad_lp = DirectForm1::<f32>::new(coeffs_lp);
-        let mut biquad_hp = DirectForm1::<f32>::new(coeffs_hp);
-
-        let filtered = pcm_data_in_1_ms
-            .iter()
-            .map(|&x| biquad_lp.run(biquad_hp.run(x)))
-            .collect::<Vec<f32>>();
         // Sample the frequency
-        self.sample_queue.extend(filtered);
+        let decoded_data = self.decoder(pcm_data);
+        self.sample_queue.extend(decoded_data);
 
         // If no mod and sample_time is 690
         if self.mode == Mode::None && self.sample_queue.len() >= self.header_sample_num {
@@ -346,8 +362,8 @@ impl SSTVDecoder {
             data_to_parse.len(),
         ];
 
-        //   let _sync = self.decoder(&data_to_parse[division[0]..division[1]], true);
-        //   let _porch = self.decoder(&data_to_parse[division[1]..division[2]], true);
+        //  let _sync = self.decoder(&data_to_parse[division[0]..division[1]], true);
+        //  let _porch = self.decoder(&data_to_parse[division[1]..division[2]], true);
 
         let line_y1 = self.decode_line_info(&data_to_parse[division[2]..division[3]], pixel_count);
         let line_ry = self.decode_line_info(&data_to_parse[division[3]..division[4]], pixel_count);
